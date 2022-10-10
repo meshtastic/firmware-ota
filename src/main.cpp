@@ -5,17 +5,8 @@
     Licence: MIT
     OTA Bluetooth example between ESP32 (using NimBLE Bluetooth stack) and iOS swift (CoreBluetooth framework)
     Tested withh NimBLE v 1.3.1, iOS 14, ESP32 core 1.06
-    N.B standard "nimconfig.h" needs to be customised (see below). In this example we only use the ESP32
-    as perhipheral, hence no need to activate scan or central mode. Stack usage performs better for file transfer
-    if stack is increased to 8192 Bytes
 */
-#include "NimBLEDevice.h"     // via Arduino library manager // https://github.com/h2zero/NimBLE-Arduino
-// The following file needs to be changed: "nimconfig.h"
-// Line 14: uncomment and increase MTU size to: #define CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU 512
-// Line 45: uncomment : #define CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED
-// Line 50: uncomment : #define CONFIG_BT_NIMBLE_ROLE_OBSERVER_DISABLED
-// Line 86: uncomments and increase stack size to : #define CONFIG_BT_NIMBLE_TASK_STACK_SIZE 8192
-
+#include "NimBLEDevice.h"
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
 #include "nvs.h"
