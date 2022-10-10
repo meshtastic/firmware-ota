@@ -1,3 +1,7 @@
+import os
+import hashlib
+import struct
+import sys
 from os.path import join
 from readprops import readProps
 from datetime import datetime
@@ -24,6 +28,21 @@ def esp32_patch_bin(source, target, env):
         fh.seek(128)
         fh.write(str.encode(now.strftime("%b %d %Y").ljust(16, '\0')))
     fh.close()
+    image = LoadFirmwareImage("esp32", firmware_name)
+    calc_checksum = image.calculate_checksum()
+    with open(firmware_name, 'r+b') as fh:
+        fh.seek(-48, os.SEEK_END)
+        align = 15 - (fh.tell() % 16)
+        fh.seek(align,1)
+        fh.write(struct.pack(b"B", calc_checksum))
+        image_length = fh.tell()
+        fh.seek(0)
+        digest = hashlib.sha256()
+        digest.update(fh.read(image_length))
+        fh.write(digest.digest())
+    fh.close()
 
 if (platform.name == "espressif32"):
+    sys.path.append(join(platform.get_package_dir("tool-esptoolpy")))
+    from esptool.bin_image import LoadFirmwareImage
     env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", esp32_patch_bin)
