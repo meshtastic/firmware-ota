@@ -91,8 +91,6 @@ class otaCallback: public BLECharacteristicCallbacks {
       if (!downloadFlag) 
       {
         // First BLE bytes have arrived
-        
-
 
         update_partition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, "app");
         assert(update_partition != NULL);
@@ -194,8 +192,6 @@ const char *getDeviceName()
     return name;
 }
 
-
-
 void setup() {
   uint32_t seed = esp_random();
 #ifdef DEBUG
@@ -224,6 +220,10 @@ void setup() {
   Serial.printf("Number of Device Reboots: %d\n", rebootCounter);
 #endif
   preferences.end();
+
+  // on next reboot, switch back to app partition in case something goes wrong here
+  esp_ota_set_boot_partition(esp_ota_get_next_update_partition(NULL));
+  
   NimBLEDevice::init(getDeviceName());
   NimBLEDevice::setMTU(517);
   
@@ -243,9 +243,8 @@ void setup() {
   pService->start();
 
   pServer->getAdvertising()->addServiceUUID(pService->getUUID());
-  pServer->getAdvertising()->start();
-  
-  NimBLEDevice::startAdvertising();
+
+  pServer->startAdvertising();
 #ifdef DEBUG 
   Serial.println("Waiting a client connection to notify...");
 #endif
