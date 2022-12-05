@@ -58,9 +58,9 @@ jobs:
       - name: Build ESP32
         run: |
           pio run
-          
+                    
       - name: Create release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         id: create_release
         with:
           draft: false
