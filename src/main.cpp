@@ -10,9 +10,14 @@
 #include "esp_ota_ops.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "FSCommon.h"
 #include <Preferences.h>
 #include <esp_task_wdt.h>
+#include "mesh-pb-constants.h"
+#include <pb_decode.h>
+#include <pb_encode.h>
 Preferences preferences;
+DeviceState devicestate;
 
 /*------------------------------------------------------------------------------
   BLE instances & variables
@@ -31,6 +36,48 @@ String fileExtension = "";
 #define CHARACTERISTIC_OTA_UUID       "62ec0272-3ec5-11eb-b378-0242ac130005"
 
 // #define MAX_BLOCKSIZE_FOR_BT 512
+
+static const char *prefFileName = "/prefs/db.proto";
+
+/** Load a protobuf from a file, return true for success */
+bool loadProto(const char *filename, size_t protoSize, size_t objSize, const pb_msgdesc_t *fields, void *dest_struct)
+{
+    bool okay = false;
+#ifdef FSCom
+    // static DeviceState scratch; We no longer read into a tempbuf because this structure is 15KB of valuable RAM
+
+    auto f = FSCom.open(filename, FILE_O_READ);
+
+    if (f) {
+#ifdef DEBUG
+        Serial.printf("Loading %s\n", filename);
+#endif
+        pb_istream_t stream = {&readcb, &f, protoSize};
+
+        // DEBUG_MSG("Preload channel name=%s\n", channelSettings.name);
+
+        memset(dest_struct, 0, objSize);
+        if (!pb_decode(&stream, fields, dest_struct)) {
+#ifdef DEBUG
+            Serial.printf("Error: can't decode protobuf %s\n", PB_GET_ERROR(&stream));
+#endif
+        } else {
+            okay = true;
+        }
+
+        f.close();
+    } else {
+#ifdef DEBUG
+        Serial.printf("No %s preferences found\n", filename);
+#endif
+    }
+#else
+#ifdef DEBUG
+    Serial.printf("ERROR: Filesystem not implemented\n");
+#endif
+#endif
+    return okay;
+}
 
 /*------------------------------------------------------------------------------
   OTA instances & variables
@@ -182,13 +229,24 @@ class otaCallback: public BLECharacteristicCallbacks {
       }
     }
 };
+
 const char *getDeviceName()
 {
+    User &owner = devicestate.owner;
     uint8_t dmac[6];
     assert(esp_efuse_mac_get_default(dmac) == ESP_OK);
     // Meshtastic_ab3c
     static char name[20];
-    sprintf(name, "Meshtastic_%02x%02x", dmac[4], dmac[5]);
+    sprintf(name, "%02x%02x", dmac[4], dmac[5]);
+    // if the shortname exists and is NOT the new default of ab3c, use it for BLE name.
+    if ((owner.short_name != NULL) && (strcmp(owner.short_name, name) != 0)) {
+        sprintf(name, "%s_%02x%02x", owner.short_name, dmac[4], dmac[5]);
+    } else {
+        sprintf(name, "Meshtastic_%02x%02x", dmac[4], dmac[5]);
+    }
+#ifdef DEBUG
+    Serial.printf("BLE name: %s\n", name);
+#endif
     return name;
 }
 
@@ -223,7 +281,15 @@ void setup() {
 
   // on next reboot, switch back to app partition in case something goes wrong here
   esp_ota_set_boot_partition(esp_ota_get_next_update_partition(NULL));
-  
+
+  if (loadProto(prefFileName, DeviceState_size, sizeof(devicestate), DeviceState_fields, &devicestate)) {
+#ifdef DEBUG
+    Serial.printf("Loaded saved devicestate version %d\n", devicestate.version);
+#endif
+  } else {
+    memset(&devicestate, 0, sizeof(DeviceState));
+  }
+
   NimBLEDevice::init(getDeviceName());
   NimBLEDevice::setMTU(517);
   

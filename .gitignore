@@ -5,3 +5,4 @@
 .vscode/ipch
 /.vscode
 /bin/__pycache__
+/nanopb-*
