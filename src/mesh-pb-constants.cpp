@@ -11,9 +11,7 @@ size_t pb_encode_to_bytes(uint8_t *destbuf, size_t destbufsize, const pb_msgdesc
 {
     pb_ostream_t stream = pb_ostream_from_buffer(destbuf, destbufsize);
     if (!pb_encode(&stream, fields, src_struct)) {
-#ifdef DEBUG
         Serial.printf("Panic: can't encode protobuf reason='%s'\n", PB_GET_ERROR(&stream));
-#endif
         assert(0); // If this asser fails it probably means you made a field too large for the max limits specified in mesh.options
     } else {
         return stream.bytes_written;
@@ -25,9 +23,7 @@ bool pb_decode_from_bytes(const uint8_t *srcbuf, size_t srcbufsize, const pb_msg
 {
     pb_istream_t stream = pb_istream_from_buffer(srcbuf, srcbufsize);
     if (!pb_decode(&stream, fields, dest_struct)) {
-#ifdef DEBUG
         Serial.printf("Error: can't decode protobuf reason='%s', pb_msgdesc 0x%p\n", PB_GET_ERROR(&stream), fields);
-#endif
         return false;
     } else {
         return true;
