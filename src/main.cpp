@@ -241,6 +241,8 @@ void setup() {
   Serial.printf("Number of Device Reboots: %d\n", rebootCounter);
   preferences.end();
 
+  fsInit();
+
   // on next reboot, switch back to app partition in case something goes wrong here
   esp_ota_set_boot_partition(esp_ota_get_next_update_partition(NULL));
 
