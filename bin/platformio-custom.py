@@ -14,6 +14,7 @@ def esp32_patch_bin(source, target, env):
     verObj = readProps(prefsLoc)
     now = datetime.now()
     firmware_name = env.subst("$BUILD_DIR/${PROGNAME}.bin")
+    chip = env.get("BOARD_MCU")
     with open(firmware_name, 'r+b') as fh:
         # write version string to 0x30
         fh.seek(48)
@@ -28,7 +29,7 @@ def esp32_patch_bin(source, target, env):
         fh.seek(128)
         fh.write(str.encode(now.strftime("%b %d %Y").ljust(16, '\0')))
     fh.close()
-    image = LoadFirmwareImage("esp32", firmware_name)
+    image = LoadFirmwareImage(chip, firmware_name)
     calc_checksum = image.calculate_checksum()
     with open(firmware_name, 'r+b') as fh:
         fh.seek(-48, os.SEEK_END)
