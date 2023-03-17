@@ -258,6 +258,10 @@ void setup() {
     memset(&devicestate, 0, sizeof(meshtastic_DeviceState));
   }
 
+  std::string manufacturerData =
+      std::to_string(devicestate.owner.hw_model) + "|" +
+      std::string(devicestate.my_node.firmware_version);
+
   Serial.printf("Hardware Model: %d\n", devicestate.owner.hw_model);
   Serial.printf("Main Firmware Version: %s\n",
                 devicestate.my_node.firmware_version);
@@ -281,6 +285,7 @@ void setup() {
   pService->start();
 
   pServer->getAdvertising()->addServiceUUID(pService->getUUID());
+  pServer->getAdvertising()->setManufacturerData(manufacturerData);
 
   pServer->startAdvertising();
   Serial.println("Waiting a client connection to notify...");
