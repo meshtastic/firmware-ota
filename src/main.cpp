@@ -258,6 +258,10 @@ void setup() {
     memset(&devicestate, 0, sizeof(meshtastic_DeviceState));
   }
 
+  Serial.printf("Hardware Model: %d\n", devicestate.owner.hw_model);
+  Serial.printf("Main Firmware Version: %s\n",
+                devicestate.my_node.firmware_version);
+
   NimBLEDevice::init(getDeviceName());
   NimBLEDevice::setMTU(517);
 
