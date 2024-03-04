@@ -55,11 +55,13 @@ jobs:
         run: |
           pio upgrade
 
-      - name: Build ESP32 + ESP32-S2
+      - name: Build ESP32 + ESP32-S2 + ESP32-C3
         run: |
           pio run -e ttgo-t-beam
           pio run -e tlora-t3s3-v1
+          pio run -e esp32c3
           mv .pio/build/tlora-t3s3-v1/firmware.bin .pio/build/tlora-t3s3-v1/firmware-s3.bin
+          mv .pio/build/esp32c3/firmware.bin .pio/build/esp32c3/firmware-c3.bin
                     
       - name: Create release
         if: ${{ github.event_name != 'pull_request_target' && github.event_name != 'pull_request' }}
@@ -73,5 +75,6 @@ jobs:
           files: |
             .pio/build/ttgo-t-beam/firmware.bin
             .pio/build/tlora-t3s3-v1/firmware-s3.bin
+            .pio/build/esp32c3/firmware-c3.bin
         env:
           GITHUB_TOKEN: ${{ github.token }}
