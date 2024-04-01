@@ -80,6 +80,9 @@ static const esp_partition_t *update_partition = NULL;
 
 uint8_t txValue = 0;
 int bufferCount = 0;
+size_t ota_size = 0;
+size_t total_received = 0;
+uint8_t chunkCount = 1;
 bool downloadFlag = false;
 
 class MyServerCallbacks : public BLEServerCallbacks {
@@ -117,18 +120,42 @@ class MyServerCallbacks : public BLEServerCallbacks {
 
 class otaCallback : public BLECharacteristicCallbacks {
 
+  void cleanUp() {
+    downloadFlag = false;
+    ota_size = 0;
+    total_received = 0;
+  }
+
   void onWrite(BLECharacteristic *pCharacteristic) {
     std::string rxData = pCharacteristic->getValue();
-    bufferCount++;
 
-    if (!downloadFlag) {
+    if (!downloadFlag && ota_size == 0) {
+      // Check if the string starts with "OTA_SIZE:"
+      Serial.printf("Waiting for OTA size: %s\n\r", rxData.c_str());
+      if (rxData.rfind("OTA_SIZE:", 0) == 0) {
+        // Strip away "OTA_SIZE:"
+        std::string sizeStr = rxData.substr(9);
+
+        // Convert the remaining string to an integer
+        ota_size = std::stoul(sizeStr);
+        Serial.printf("OTA size: %zd\n\r", ota_size);
+      }
+      return;
+    }
+
+    bufferCount++;
+    total_received += rxData.length() * chunkCount;
+    u_int8_t firstByte = rxData[0]; //print first byte as hex
+    Serial.printf("Progress R: %d T: %d C: %d B: %x\n\r", total_received, ota_size, rxData.length(), firstByte);
+
+    if (!downloadFlag && ota_size > 0) {
       // First BLE bytes have arrived
 
       update_partition = esp_partition_find_first(
           ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, "app");
       assert(update_partition != NULL);
 
-      Serial.printf("Writing to partition subtype %d at offset 0x%x \n",
+      Serial.printf("Writing to partition subtype %d at offset 0x%x \n\r",
                     update_partition->subtype, update_partition->address);
 
       // esp_ota_begin can take a while to complete as it erase the flash
@@ -139,7 +166,7 @@ class otaCallback : public BLECharacteristicCallbacks {
 
       if (esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &otaHandler) !=
           ESP_OK) {
-        downloadFlag = false;
+        cleanUp();
         return;
       }
       downloadFlag = true;
@@ -149,28 +176,24 @@ class otaCallback : public BLECharacteristicCallbacks {
       if (esp_ota_write(otaHandler, (uint8_t *)rxData.c_str(),
                         rxData.length()) != ESP_OK) {
         Serial.println("Error: write to flash failed");
-        downloadFlag = false;
+        cleanUp();
         return;
       } else {
         bufferCount = 1;
-        Serial.println("--Data received---");
         // Notify the app so next batch can be sent
         pTxCharacteristic->setValue(&txValue, 1);
         pTxCharacteristic->notify();
       }
 
-      // check if this was the last data chunk? (normaly the last chunk is
-      // smaller than the maximum MTU size). For improvement: let iOS app send
-      // byte length instead of hardcoding "510"
-      if (rxData.length() <
-          510) // TODO Asumes at least 511 data bytes (@BLE 4.2).
+      // check if this was the last data chunk? If so, finish the OTA update
+      if (ota_size == total_received)
       {
         Serial.println("Final byte arrived");
         // Final chunk arrived. Now check that
         // the length of total file is correct
         if (esp_ota_end(otaHandler) != ESP_OK) {
           Serial.println("OTA end failed ");
-          downloadFlag = false;
+          cleanUp();
           return;
         }
 
@@ -179,7 +202,7 @@ class otaCallback : public BLECharacteristicCallbacks {
         Serial.println("Set Boot partion");
         if (ESP_OK == esp_ota_set_boot_partition(update_partition)) {
           esp_ota_end(otaHandler);
-          downloadFlag = false;
+          cleanUp();
           preferences.begin("meshtastic", false);
           // reset reboot counter to zero.
           preferences.putUInt("rebootCounter", 0);
@@ -191,13 +214,13 @@ class otaCallback : public BLECharacteristicCallbacks {
         } else {
           // Something whent wrong, the upload was not successful
           Serial.println("Upload Error");
-          downloadFlag = false;
+          cleanUp();
           esp_ota_end(otaHandler);
           return;
         }
       }
     } else {
-      downloadFlag = false;
+      cleanUp();
     }
   }
 };
