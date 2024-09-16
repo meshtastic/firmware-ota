@@ -6,18 +6,13 @@
    Bluetooth stack) and iOS swift (CoreBluetooth framework) Tested withh NimBLE
    v 1.3.1, iOS 14, ESP32 core 1.06
 */
-#include "FSCommon.h"
 #include "NimBLEDevice.h"
 #include "esp_ota_ops.h"
-#include "mesh-pb-constants.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include <Preferences.h>
 #include <esp_task_wdt.h>
-#include <pb_decode.h>
-#include <pb_encode.h>
 Preferences preferences;
-meshtastic_DeviceState devicestate;
 
 /*------------------------------------------------------------------------------
   BLE instances & variables
@@ -36,41 +31,6 @@ String fileExtension = "";
 #define CHARACTERISTIC_OTA_UUID "62ec0272-3ec5-11eb-b378-0242ac130005"
 
 // #define MAX_BLOCKSIZE_FOR_BT 512
-
-static const char *prefFileName = "/prefs/db.proto";
-
-/** Load a protobuf from a file, return true for success */
-bool loadProto(const char *filename, size_t protoSize, size_t objSize,
-               const pb_msgdesc_t *fields, void *dest_struct) {
-  bool okay = false;
-#ifdef FSCom
-  // static DeviceState scratch; We no longer read into a tempbuf because this
-  // structure is 15KB of valuable RAM
-
-  auto f = FSCom.open(filename, FILE_O_READ);
-
-  if (f) {
-    Serial.printf("Loading %s\n", filename);
-    pb_istream_t stream = {&readcb, &f, protoSize};
-
-    // DEBUG_MSG("Preload channel name=%s\n", channelSettings.name);
-
-    memset(dest_struct, 0, objSize);
-    if (!pb_decode(&stream, fields, dest_struct)) {
-      Serial.printf("Error: can't decode protobuf %s\n", PB_GET_ERROR(&stream));
-    } else {
-      okay = true;
-    }
-
-    f.close();
-  } else {
-    Serial.printf("No %s preferences found\n", filename);
-  }
-#else
-  Serial.printf("ERROR: Filesystem not implemented\n");
-#endif
-  return okay;
-}
 
 /*------------------------------------------------------------------------------
   OTA instances & variables
@@ -145,8 +105,9 @@ class otaCallback : public BLECharacteristicCallbacks {
 
     bufferCount++;
     total_received += rxData.length() * chunkCount;
-    u_int8_t firstByte = rxData[0]; //print first byte as hex
-    Serial.printf("Progress R: %d T: %d C: %d B: %x\n\r", total_received, ota_size, rxData.length(), firstByte);
+    u_int8_t firstByte = rxData[0]; // print first byte as hex
+    Serial.printf("Progress R: %d T: %d C: %d B: %x\n\r", total_received,
+                  ota_size, rxData.length(), firstByte);
 
     if (!downloadFlag && ota_size > 0) {
       // First BLE bytes have arrived
@@ -186,8 +147,7 @@ class otaCallback : public BLECharacteristicCallbacks {
       }
 
       // check if this was the last data chunk? If so, finish the OTA update
-      if (ota_size == total_received)
-      {
+      if (ota_size == total_received) {
         Serial.println("Final byte arrived");
         // Final chunk arrived. Now check that
         // the length of total file is correct
@@ -226,35 +186,29 @@ class otaCallback : public BLECharacteristicCallbacks {
 };
 
 const char *getDeviceName() {
-  meshtastic_User &owner = devicestate.owner;
   uint8_t dmac[6];
   assert(esp_efuse_mac_get_default(dmac) == ESP_OK);
   // Meshtastic_ab3c
   static char name[20];
-  sprintf(name, "%02x%02x", dmac[4], dmac[5]);
-  // if the shortname exists and is NOT the new default of ab3c, use it for BLE
-  // name.
-  if ((owner.short_name != NULL) && (strcmp(owner.short_name, name) != 0)) {
-    sprintf(name, "%s_%02x%02x", owner.short_name, dmac[4], dmac[5]);
-  } else {
-    sprintf(name, "Meshtastic_%02x%02x", dmac[4], dmac[5]);
-  }
+  sprintf(name, "Meshtastic_%02x%02x", dmac[4], dmac[5]);
   Serial.printf("BLE name: %s\n", name);
   return name;
 }
 
 void setup() {
+  /* We explicitly don't want to do call randomSeed,
+  // as that triggers the esp32 core to use a less secure pseudorandom function.
   uint32_t seed = esp_random();
+  randomSeed(seed);
+  */
   Serial.begin(115200);
   Serial.print("\n\n//\\ E S H T /\\ S T / C Failsafe OTA\n\n");
   Serial.printf("ESP32 Chip model = %d\n", ESP.getChipRevision());
   Serial.printf("This chip has %d MHz\n", ESP.getCpuFreqMHz());
-  Serial.printf("Setting random seed %u\n", seed);
   Serial.printf("Total heap: %d\n", ESP.getHeapSize());
   Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
   Serial.printf("Total PSRAM: %d\n", ESP.getPsramSize());
   Serial.printf("Free PSRAM: %d\n", ESP.getFreePsram());
-  randomSeed(seed); // ESP docs say this is fairly random
   nvs_stats_t nvs_stats;
   auto res = nvs_get_stats(NULL, &nvs_stats);
   assert(res == ESP_OK);
@@ -264,30 +218,19 @@ void setup() {
       nvs_stats.namespace_count);
   preferences.begin("meshtastic", false);
   uint32_t rebootCounter = preferences.getUInt("rebootCounter", 0);
-
+  uint8_t hwven = preferences.getUInt("hwVendor", 0);
+  String fwrev = preferences.getString("firmwareVersion", "");
   Serial.printf("Number of Device Reboots: %d\n", rebootCounter);
   preferences.end();
-
-  fsInit();
 
   // on next reboot, switch back to app partition in case something goes wrong
   // here
   esp_ota_set_boot_partition(esp_ota_get_next_update_partition(NULL));
 
-  if (loadProto(prefFileName, meshtastic_DeviceState_size, sizeof(devicestate),
-                meshtastic_DeviceState_fields, &devicestate)) {
-    Serial.printf("Loaded saved devicestate version %d\n", devicestate.version);
-  } else {
-    memset(&devicestate, 0, sizeof(meshtastic_DeviceState));
-  }
+  std::string manufacturerData = std::to_string(hwven) + "|" + fwrev.c_str();
 
-  std::string manufacturerData =
-      std::to_string(devicestate.owner.hw_model) + "|" +
-      std::string(devicestate.my_node.firmware_version);
-
-  Serial.printf("Hardware Model: %d\n", devicestate.owner.hw_model);
-  Serial.printf("Main Firmware Version: %s\n",
-                devicestate.my_node.firmware_version);
+  Serial.printf("Hardware Model: %d\n", hwven);
+  Serial.printf("Main Firmware Version: %s\n", fwrev.c_str());
 
   NimBLEDevice::init(getDeviceName());
   NimBLEDevice::setMTU(517);
