@@ -10,7 +10,7 @@ on:
     paths-ignore:
       - "**.md"
 
-  pull_request_target:
+  pull_request:
     branches: [ "master" ]
     paths-ignore:
       - "**.md"
